@@ -76,7 +76,7 @@ def create_app(client: BitNetEngine | None = None, admin_password: str | None = 
     settings) replaces `warm`, `check_hours` and `max_inflight` and keeps them live; without it they stay fixed."""
     tokens = tokens or TokenStore(os.environ.get("BITNET_TOKENS_FILE", "tokens.json"))
     client = client or BitNetEngine(config.get("model") if config else os.environ.get("BITNET_MODEL", DEFAULT_MODEL),
-                                    marker=default_marker())
+                                    dtype=config.get("dtype") if config else "bfloat16", marker=default_marker())
     inflight = 0
 
     def inflight_limit() -> int:
@@ -294,7 +294,8 @@ def main() -> None:
     store = TokenStore(os.environ.get("BITNET_TOKENS_FILE", "tokens.json"))
     config = settings.Config(store.settings_path, SETTINGS)
     client = BitNetEngine(config.get("model"), projects_dir=config.get("project_models_dir"),
-                          max_projects=config.get("max_project_models"), marker=default_marker())
+                          max_projects=config.get("max_project_models"), dtype=config.get("dtype"),
+                          marker=default_marker())
     saved = settings.load(store.settings_path)
     threads = saved.get("num_thread") or os.environ.get("BITNET_NUM_THREAD", "").strip()
     if threads:

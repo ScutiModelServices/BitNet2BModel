@@ -61,12 +61,18 @@ class Loaded:
                 "completion_tokens": len(new), "finish": "length" if len(new) >= options["max_new_tokens"] else "stop"}
 
 
-def load(source: str) -> Loaded:
-    """`source`: a Hub repository or a checkpoint folder."""
+DTYPES = ("bfloat16", "float32")
+
+
+def load(source: str, dtype: str = "bfloat16") -> Loaded:
+    """`source`: a Hub repository or a checkpoint folder. The weights always unpack as bfloat16; `float32` converts
+    them afterwards, which is faster on CPUs without native bfloat16 maths and needs about 1.6x the memory."""
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     model = AutoModelForCausalLM.from_pretrained(source, dtype=torch.bfloat16)
+    if dtype != "bfloat16":
+        model = model.to(getattr(torch, dtype))
     model.eval()
     return Loaded(AutoTokenizer.from_pretrained(source), model)
 
@@ -108,7 +114,8 @@ class BitNetEngine:
     """The `loader`, `set_threads`, `remote_sha`, `cached_sha` and `download` callables are injectable for tests."""
 
     def __init__(self, model: str = DEFAULT_MODEL, *, projects_dir: str = "", max_projects: int = 2,
-                 timeout: float = 120.0, marker: Path | None = None, loader: Callable[[str], Loaded] = load,
+                 timeout: float = 120.0, marker: Path | None = None, loader: Callable[[str], Loaded] | None = None,
+                 dtype: str = "bfloat16",
                  set_threads: Callable[[int], None] = _set_threads,
                  remote_sha: Callable[[str], str] = _remote_sha, cached_sha: Callable[[str], str | None] = _cached_sha,
                  download: Callable[[str], None] = _download) -> None:
@@ -119,7 +126,11 @@ class BitNetEngine:
         self._timeout = timeout
         self._marker = marker
         self._seen = self._read_marker()
-        self._loader, self._set_threads = loader, set_threads
+        if dtype not in DTYPES:
+            raise ValueError(f"dtype must be one of {', '.join(DTYPES)}, not {dtype!r}")
+        self.dtype = dtype
+        self._loader = loader or (lambda source: load(source, self.dtype))
+        self._set_threads = set_threads
         self._remote_sha_of, self._cached_sha_of, self._download_of = remote_sha, cached_sha, download
         self._base: Loaded | None = None
         self._projects: OrderedDict[str, Loaded] = OrderedDict()

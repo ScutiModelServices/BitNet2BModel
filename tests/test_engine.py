@@ -116,3 +116,9 @@ def test_a_conversation_longer_than_the_window_is_refused():
     with pytest.raises(EngineError) as error:
         Loaded(Tokenizer(), model).generate([], 0.0, 5, 30.0)
     assert error.value.status == 400
+
+
+def test_only_known_number_formats_are_accepted():
+    assert make_engine(dtype="float32").dtype == "float32"
+    with pytest.raises(ValueError):
+        make_engine(dtype="int4")
