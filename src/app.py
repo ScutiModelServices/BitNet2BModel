@@ -7,7 +7,9 @@ the model is loaded."""
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
+import json
 import logging
 import os
 from pathlib import Path
@@ -15,12 +17,13 @@ import time
 from contextlib import asynccontextmanager
 from typing import Annotated, Any, Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import PlainTextResponse
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
 
+from cache import AnswerCache
 from engine import DEFAULT_MODEL, BitNetEngine, EngineError, default_marker
 from options import SETTINGS
 import settings
@@ -44,6 +47,7 @@ class ChatRequest(BaseModel):
     project: str | None = Field(None, pattern=PROJECT_PATTERN)
     temperature: float = Field(0.0, ge=0, le=2)
     max_tokens: int = Field(512, ge=1, le=4096)
+    stream: bool = False  # true: the answer arrives as JSON lines while it is made
 
 
 class SettingsUpdate(BaseModel):
@@ -69,15 +73,22 @@ class Threads(BaseModel):
 def create_app(client: BitNetEngine | None = None, admin_password: str | None = None,
                tokens: TokenStore | None = None, warm: bool = False,
                updates: Updates | None = None, check_hours: float = 0, max_inflight: int | None = None,
-               config: settings.Config | None = None) -> FastAPI:
+               cache_size: int | None = None, config: settings.Config | None = None) -> FastAPI:
     """`admin_password` (BITNET_ADMIN_PASSWORD) unlocks /admin/, where each project gets a token of its own; when it
     is set, every call except /health must send one of those tokens in the X-Internal-Token header. Unset = no
-    auth at all (local use only). `tokens` holds the project tokens (BITNET_TOKENS_FILE). `config` (the admin page's
-    settings) replaces `warm`, `check_hours` and `max_inflight` and keeps them live; without it they stay fixed."""
+    auth at all (local use only). `tokens` holds the project tokens (BITNET_TOKENS_FILE). `cache_size` > 0 keeps that
+    many answers per replica (BITNET_CACHE_SIZE). `config` (the admin page's settings) replaces `warm`, `check_hours`,
+    `max_inflight` and `cache_size` and keeps them live; without it they stay fixed."""
     tokens = tokens or TokenStore(os.environ.get("BITNET_TOKENS_FILE", "tokens.json"))
     client = client or BitNetEngine(config.get("model") if config else os.environ.get("BITNET_MODEL", DEFAULT_MODEL),
                                     dtype=config.get("dtype") if config else "bfloat16", marker=default_marker())
     inflight = 0
+    cache = AnswerCache()
+
+    def cache_limit() -> int:
+        """Answers this replica keeps; 0 = off."""
+        return config.get("cache_size") if config else (
+            cache_size if cache_size is not None else int(os.environ.get("BITNET_CACHE_SIZE") or 0))
 
     def inflight_limit() -> int:
         """Calls this replica lets wait for the model at once; more get 429. 0 = 4."""
@@ -181,22 +192,97 @@ def create_app(client: BitNetEngine | None = None, admin_password: str | None = 
         return {"status": "ok", "model": client.model, "ready": client.ready,
                 "num_thread": client.num_thread, "project_models": client.projects()}
 
+    def build(reply: dict[str, Any], started: float) -> dict[str, Any]:
+        return {"content": reply["content"], "finish_reason": reply["finish"], "model": reply["model"],
+                "fallback": reply["fallback"],
+                "usage": {"input_tokens": reply["prompt_tokens"], "output_tokens": reply["completion_tokens"]},
+                "duration_ms": round((time.perf_counter() - started) * 1000)}
+
+    def cache_key(body: ChatRequest) -> str:
+        """Everything that shapes the answer. Project files are not watched (see engine.py), so the key has no digest."""
+        part = [client.generation, body.project if body.project and client.has_project(body.project) else None,
+                [m.model_dump() for m in body.messages], body.max_tokens]
+        return hashlib.sha256(json.dumps(part, sort_keys=True, default=str).encode()).hexdigest()
+
+    def line(event: dict[str, Any]) -> str:
+        return json.dumps(event, ensure_ascii=False) + "\n"
+
+    def ndjson(lines: Any, cached: str) -> StreamingResponse:
+        return StreamingResponse(lines, media_type="application/x-ndjson", headers={"X-Cache": cached})
+
+    async def replay(result: dict[str, Any]):
+        """A kept answer in the shape of a stream: the whole text in one piece, then `done`."""
+        if result["content"]:
+            yield line({"type": "content", "text": result["content"]})
+        yield line({"type": "done", **result})
+
+    async def live_lines(events: Any, first: tuple[str, Any] | None, started: float, key: str | None, size: int):
+        """One JSON line per piece of text, then `done` with the same body a call without `stream` returns. A failure
+        after the first piece can only be sent as an `error` line."""
+        parts: list[str] = []
+        stats: dict[str, Any] = {}
+        try:
+            async def all_events():
+                if first is not None:
+                    yield first
+                async for event in events:
+                    yield event
+
+            async for kind, value in all_events():
+                if kind == "content":
+                    parts.append(value)
+                    yield line({"type": "content", "text": value})
+                else:
+                    stats = value
+        except EngineError as error:
+            yield line({"type": "error", "status": 422 if error.status == 400 else 500, "message": str(error)})
+            return
+        except Exception:
+            _log.exception("BitNet chat failed")
+            yield line({"type": "error", "status": 500, "message": "BitNet could not answer"})
+            return
+        finally:
+            await events.aclose()
+        result = build({**stats, "content": "".join(parts).strip()}, started)
+        if key:
+            cache.put(key, result, size)
+        yield line({"type": "done", **result})
+
     @app.post("/v1/chat")
-    async def chat(body: ChatRequest, allowed: list[str] | None = Depends(authorize), _slot: None = Depends(slot)) -> dict[str, Any]:
+    async def chat(body: ChatRequest, response: Response, allowed: list[str] | None = Depends(authorize),
+                   _slot: None = Depends(slot)) -> Any:
         check_scope(allowed, body.project)
         started = time.perf_counter()
+        size = cache_limit() if body.temperature == 0 else 0  # a higher temperature asks for a different answer each time
+        key = cache_key(body) if size else None
+        kept = cache.get(key, size) if key else None
+        if kept is not None:
+            kept = {**kept, "duration_ms": round((time.perf_counter() - started) * 1000)}
+            if body.stream:
+                return ndjson(replay(kept), "hit")
+            response.headers["X-Cache"] = "hit"
+            return kept
+        messages = [m.model_dump() for m in body.messages]
         try:
-            reply = await client.chat([m.model_dump() for m in body.messages], project=body.project,
-                                      temperature=body.temperature, max_tokens=body.max_tokens)
+            if body.stream:
+                events = client.chat_stream(messages, project=body.project, temperature=body.temperature, max_tokens=body.max_tokens)
+                try:
+                    first = await anext(events, None)  # the first piece is waited for here, so a refusal is still an HTTP error
+                except BaseException:
+                    await events.aclose()
+                    raise
+                return ndjson(live_lines(events, first, started, key, size), "miss")
+            reply = await client.chat(messages, project=body.project, temperature=body.temperature, max_tokens=body.max_tokens)
         except EngineError as error:
             raise HTTPException(422 if error.status == 400 else 500, str(error)) from None
         except Exception:
             _log.exception("BitNet chat failed")
             raise HTTPException(500, "BitNet could not answer") from None
-        return {"content": reply["content"], "finish_reason": reply["finish"], "model": reply["model"],
-                "fallback": reply["fallback"],
-                "usage": {"input_tokens": reply["prompt_tokens"], "output_tokens": reply["completion_tokens"]},
-                "duration_ms": round((time.perf_counter() - started) * 1000)}
+        result = build(reply, started)
+        if key:
+            cache.put(key, result, size)
+        response.headers["X-Cache"] = "miss"
+        return result
 
     @app.put("/admin/threads", dependencies=[Depends(admin)])
     def set_threads(body: Threads) -> dict[str, Any]:

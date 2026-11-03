@@ -24,7 +24,7 @@ In `.env` next to `docker-compose.yml`:
 
 On the **Settings** card of `/admin/` (saved in `settings.json` beside the tokens, shared by all replicas; a saved
 value beats the environment variable named in brackets): update check hours (`BITNET_UPDATE_CHECK_HOURS`, 6),
-in-flight cap (`BITNET_MAX_INFLIGHT`, 0 = 4), project models loaded per replica (`BITNET_MAX_PROJECT_MODELS`, 2),
+in-flight cap (`BITNET_MAX_INFLIGHT`, 0 = 4), answers kept per replica (`BITNET_CACHE_SIZE`, 256, 0 = off), project models loaded per replica (`BITNET_MAX_PROJECT_MODELS`, 2),
 project models folder (`BITNET_PROJECT_MODELS_DIR`, empty = off; in Docker use `/models/projects`), base model
 (`BITNET_MODEL`, restart), number format (`BITNET_DTYPE`, restart: `bfloat16` or `float32`; try `float32` if answers take many seconds on a CPU without native bfloat16 maths, it needs about 1.6x the RAM) and load at start (`BITNET_WARM`, restart). Compose does not pass these; add the variable
 under `environment:` of `bitnet` to use one as a starting value.

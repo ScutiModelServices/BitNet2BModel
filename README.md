@@ -12,8 +12,20 @@ small memory footprint, not the speed the model card shows for bitnet.cpp.
 
 | Call | Purpose |
 |---|---|
-| `POST /v1/chat` | `{"messages", "project", "temperature", "max_tokens"}` → `{"content", "finish_reason", "model", "fallback", "usage", "duration_ms"}`. |
+| `POST /v1/chat` | `{"messages", "project", "temperature", "max_tokens", "stream"}` → `{"content", "finish_reason", "model", "fallback", "usage", "duration_ms"}`. |
 | `GET /health` | `{"status": "ok", "model", "ready", "num_thread", "project_models"}`; `ready` is true once the base model is loaded. No token needed. |
+
+**Streaming.** With `"stream": true` the reply is `application/x-ndjson`: one JSON object per line while the answer is
+made, so the first words arrive at once instead of after the whole answer. Lines are `{"type": "content", "text"}`
+and finally `{"type": "done", ...}` holding the same body a call without `stream` returns. A refusal before
+the first piece (a conversation that is too long, a full queue) is still a normal HTTP error; a failure after it is
+sent as `{"type": "error", "status", ...}` and ends the stream. A kept answer (see below) is streamed back in one piece.
+
+**Cache.** The *Answers kept per replica* setting (`BITNET_CACHE_SIZE`, default 256, 0 = off) keeps the last answers
+for identical requests and sends them again without generating (`X-Cache: hit`). Only requests with `temperature` 0
+(the default) are kept, because a higher temperature asks for a different answer each time. Project model files are not watched (see the note on project models), so a replaced checkpoint is only noticed after a restart; new base weights empty the cache. The cache is per
+replica, so with N replicas the hit rate is about 1/N. `stream` does not change the key: a streamed answer fills the
+cache for plain calls and the other way round.
 
 `messages` use the roles `system`, `user` and `assistant`. `temperature` 0 (the default) is greedy. `max_tokens` is
 at most 4096 and the whole conversation must fit the model's 4096-token window (422 otherwise).
@@ -30,7 +42,7 @@ that answered. Replacing the files of an already loaded project needs a replica 
 ## Admin page
 
 `/admin/` (password `BITNET_ADMIN_PASSWORD`): per-project tokens with project scope, rate limit and expiry, usage
-numbers, CPU threads, the Settings card (update check hours, in-flight cap, project models), and the Updates card
+numbers, CPU threads, the Settings card (update check hours, in-flight cap, answers kept, project models), and the Updates card
 (**Check now** and **Download new weights** for the Hugging Face repository). New weights are downloaded once into
 the shared models volume; the other replicas notice within a few seconds and load them on their next request.
 `/metrics` (admin password) is Prometheus text per token.
