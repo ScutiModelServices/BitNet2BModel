@@ -1,4 +1,5 @@
 import asyncio
+import json
 import time
 
 import httpx
@@ -243,3 +244,84 @@ def test_main_builds_the_engine_from_settings(monkeypatch, tmp_path):
     monkeypatch.setattr("uvicorn.run", lambda app, host, port: started.update(app=app, host=host, port=port))
     module.main()
     assert started["port"] == 9999 and started["host"] == "127.0.0.1" and seen == [2]
+
+
+def events(reply):
+    return [json.loads(text) for text in reply.text.splitlines()]
+
+
+def test_stream_sends_json_lines_then_the_same_body_as_a_call_without_stream():
+    engine = make_engine(reply="one two three")
+    reply = client(engine).post("/v1/chat", json={**BODY, "stream": True})
+    assert reply.status_code == 200 and reply.headers["content-type"].startswith("application/x-ndjson")
+    sent = events(reply)
+    assert [e["text"] for e in sent[:-1]] == ["one ", "two ", "three"] and {e["type"] for e in sent[:-1]} == {"content"}
+    done = sent[-1]
+    assert done["type"] == "done" and done["content"] == "one two three" and done["finish_reason"] == "stop"
+    assert done["usage"] == {"input_tokens": 3, "output_tokens": 5} and done["model"] == "m" and done["fallback"] is False
+    assert engine._base.calls[0]["stream"] is True
+
+
+def test_stream_errors_before_the_first_piece_are_http_errors_and_later_ones_are_error_lines():
+    assert client(make_engine(fail=EngineError("too long", 400))).post("/v1/chat", json={**BODY, "stream": True}).status_code == 422
+    assert client(make_engine(fail=EngineError("broken", 500))).post("/v1/chat", json={**BODY, "stream": True}).status_code == 500
+    cut = client(make_engine(reply="one two three", fail_after=1)).post("/v1/chat", json={**BODY, "stream": True})
+    assert cut.status_code == 200 and events(cut)[0] == {"type": "content", "text": "one "}
+    assert events(cut)[-1] == {"type": "error", "status": 500, "message": "BitNet could not answer"}
+
+
+def test_the_same_request_is_answered_from_the_cache():
+    engine = make_engine()
+    c = client(engine, cache_size=4)
+    first, second = c.post("/v1/chat", json=BODY), c.post("/v1/chat", json=BODY)
+    assert (first.headers["X-Cache"], second.headers["X-Cache"]) == ("miss", "hit")
+    assert second.json()["content"] == first.json()["content"] and len(engine._base.calls) == 1
+    c.post("/v1/chat", json={**BODY, "max_tokens": 7})  # any change in the request is another answer
+    c.post("/v1/chat", json={"messages": [{"role": "user", "content": "other"}]})
+    assert len(engine._base.calls) == 3
+
+
+def test_only_temperature_zero_is_kept_and_the_cache_can_be_off():
+    engine = make_engine()
+    c = client(engine, cache_size=4)
+    for _ in range(2):
+        assert c.post("/v1/chat", json={**BODY, "temperature": 0.5}).headers["X-Cache"] == "miss"
+    assert len(engine._base.calls) == 2
+    off = client(make_engine())  # no cache_size: off
+    assert [off.post("/v1/chat", json=BODY).headers["X-Cache"] for _ in range(2)] == ["miss", "miss"]
+
+
+def test_the_cache_is_not_used_after_the_weights_were_replaced_and_keeps_projects_apart(tmp_path):
+    (tmp_path / "p1").mkdir()
+    (tmp_path / "p1" / "config.json").write_text("{}")
+    engine = make_engine(projects_dir=str(tmp_path))
+    c = client(engine, cache_size=8)
+    c.post("/v1/chat", json=BODY)
+    assert c.post("/v1/chat", json=BODY).headers["X-Cache"] == "hit"
+    assert c.post("/v1/chat", json={**BODY, "project": "p1"}).headers["X-Cache"] == "miss"  # its own model
+    assert c.post("/v1/chat", json={**BODY, "project": "gone"}).headers["X-Cache"] == "hit"  # falls back to the base answer
+    asyncio.run(engine.unload())  # new weights
+    assert c.post("/v1/chat", json=BODY).headers["X-Cache"] == "miss"
+
+
+def test_stream_fills_the_cache_and_a_kept_answer_streams_back_in_one_piece():
+    engine = make_engine(reply="one two")
+    c = client(engine, cache_size=4)
+    streamed = c.post("/v1/chat", json={**BODY, "stream": True})
+    kept = c.post("/v1/chat", json={**BODY, "stream": True})
+    assert (streamed.headers["X-Cache"], kept.headers["X-Cache"]) == ("miss", "hit") and len(engine._base.calls) == 1
+    sent = events(kept)
+    assert [e["type"] for e in sent] == ["content", "done"] and sent[0]["text"] == "one two" and sent[1]["content"] == "one two"
+    assert c.post("/v1/chat", json=BODY).headers["X-Cache"] == "hit"  # the same cache serves a call without stream
+
+
+def test_cache_size_is_a_setting_that_applies_live(tmp_path):
+    store = TokenStore(tmp_path / "t.json")
+    config = settings.Config(store.settings_path, SETTINGS)
+    config.set({"update_check_hours": 0, "warm": False})
+    c = client(make_engine(), admin_password="admin", tokens=store, config=config)
+    admin = {"X-Internal-Token": "admin"}
+    use = {"X-Internal-Token": c.post("/admin/tokens", json={"name": "t"}, headers=admin).json()["token"]}
+    assert [c.post("/v1/chat", json=BODY, headers=use).headers["X-Cache"] for _ in range(2)] == ["miss", "hit"]
+    assert c.put("/admin/settings", json={"values": {"cache_size": 0}}, headers=admin).status_code == 200
+    assert c.post("/v1/chat", json=BODY, headers=use).headers["X-Cache"] == "miss"

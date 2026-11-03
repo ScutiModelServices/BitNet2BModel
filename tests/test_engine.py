@@ -1,4 +1,5 @@
 import asyncio
+import threading
 
 import pytest
 import torch
@@ -122,3 +123,96 @@ def test_only_known_number_formats_are_accepted():
     assert make_engine(dtype="float32").dtype == "float32"
     with pytest.raises(ValueError):
         make_engine(dtype="int4")
+
+
+class WordTokenizer(Tokenizer):
+    def decode(self, ids, skip_special_tokens):
+        return "".join(chr(96 + int(i)) for i in ids)
+
+
+class StreamingModel(Model):
+    """Feeds the streamer the way `generate` does: the prompt first, then each new token, then the end."""
+
+    def generate(self, **options):
+        self.options = options
+        streamer = options["streamer"]
+        streamer.put(options["input_ids"])
+        for token in self.new:
+            streamer.put(torch.tensor([token]))
+        streamer.end()
+        return torch.tensor([[1, 2, 3, *self.new]])
+
+
+def test_stream_gives_the_text_then_the_stats():
+    model = StreamingModel([7, 8])
+    events = list(Loaded(WordTokenizer(), model).stream([], 0.0, 5, 30.0, threading.Event()))
+    assert "".join(value for kind, value in events if kind == "content") == "gh"
+    assert events[-1] == ("done", {"prompt_tokens": 3, "completion_tokens": 2, "finish": "stop"})
+    assert model.options["do_sample"] is False and model.options["max_time"] == 30.0
+    assert list(Loaded(WordTokenizer(), StreamingModel([7, 8])).stream([], 0.0, 2, 30.0, threading.Event()))[-1][1]["finish"] == "length"
+
+
+def test_setting_stop_makes_the_generation_stop_and_a_crash_does_not_hang_the_stream():
+    class Watching(StreamingModel):
+        def generate(self, **options):
+            criteria = options["stopping_criteria"][0]
+            self.seen = [criteria(torch.tensor([[1, 2]]), None).tolist()]
+            options["stop_now"]()
+            self.seen.append(criteria(torch.tensor([[1, 2]]), None).tolist())
+            return super().generate(**options)
+
+    stop = threading.Event()
+    model = Watching([7])
+    model.options = None
+    original = model.generate
+    model.generate = lambda **options: original(**options, stop_now=stop.set)
+    list(Loaded(WordTokenizer(), model).stream([], 0.0, 5, 30.0, stop))
+    assert model.seen == [[False], [True]]  # `stop` set from outside reaches the running generation
+
+    class Crashing(StreamingModel):
+        def generate(self, **options):
+            raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        list(Loaded(WordTokenizer(), Crashing([7])).stream([], 0.0, 5, 30.0, threading.Event()))
+
+
+def test_a_stream_over_the_window_is_refused_before_the_first_piece():
+    model = StreamingModel([7])
+    model.config = type("Config", (), {"max_position_embeddings": 3})()
+    with pytest.raises(EngineError) as error:
+        next(Loaded(WordTokenizer(), model).stream([], 0.0, 5, 30.0, threading.Event()))
+    assert error.value.status == 400
+
+
+def stream(engine, project=None):
+    async def run():
+        return [event async for event in engine.chat_stream([{"role": "user", "content": "hi"}], project=project, temperature=0.0, max_tokens=5)]
+
+    return asyncio.run(run())
+
+
+def test_chat_stream_gives_the_pieces_then_the_stats_with_the_model_and_fallback():
+    events = stream(make_engine(reply="one two"))
+    assert events[:2] == [("content", "one "), ("content", "two")]
+    assert events[2] == ("done", {"prompt_tokens": 3, "completion_tokens": 5, "finish": "stop", "model": "m", "fallback": False})
+    assert stream(make_engine(), project="nope")[-1][1]["fallback"] is True
+
+
+def test_closing_a_stream_early_stops_the_generation_and_frees_the_slot():
+    async def run():
+        engine = make_engine(reply="a b c d")
+        events = engine.chat_stream([{"role": "user", "content": "hi"}], project=None, temperature=0.0, max_tokens=5)
+        await anext(events)
+        await events.aclose()
+        assert engine._base.stopped.is_set()
+        return await asyncio.wait_for(engine.chat([{"role": "user", "content": "hi"}], project=None, temperature=0.0, max_tokens=5), 2)
+
+    assert asyncio.run(run())["content"] == "a b c d"
+
+
+def test_generation_changes_when_the_loaded_models_are_dropped():
+    engine = make_engine()
+    before = engine.generation
+    asyncio.run(engine.unload())
+    assert engine.generation == before + 1

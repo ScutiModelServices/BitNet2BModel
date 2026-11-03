@@ -18,7 +18,7 @@ import threading
 import uuid
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, AsyncIterator, Callable, Iterator
 
 # Unpacking the 1.58-bit weights on a CPU otherwise tries to compile C++ through torch.compile and fails.
 os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
@@ -42,9 +42,8 @@ class Loaded:
     def __init__(self, tokenizer: Any, model: Any) -> None:
         self.tokenizer, self.model = tokenizer, model
 
-    def generate(self, messages: list[dict[str, str]], temperature: float, max_tokens: int, max_time: float) -> dict[str, Any]:
-        import torch
-
+    def _prepare(self, messages: list[dict[str, str]], temperature: float, max_tokens: int,
+                 max_time: float) -> tuple[Any, int, dict[str, Any]]:
         ids = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt", return_dict=True)
         prompt = ids["input_ids"].shape[1]
         window = getattr(self.model.config, "max_position_embeddings", 4096)
@@ -54,6 +53,52 @@ class Loaded:
                                    "do_sample": temperature > 0}
         if temperature > 0:
             options["temperature"] = temperature
+        return ids, prompt, options
+
+    def stream(self, messages: list[dict[str, str]], temperature: float, max_tokens: int, max_time: float,
+               stop: threading.Event) -> Iterator[tuple[str, Any]]:
+        """("content", text) pieces as the model makes them, then ("done", stats). Setting `stop` ends the generation
+        after the token being made; a conversation that is too long raises before the first piece."""
+        import torch
+        from transformers import StoppingCriteria, StoppingCriteriaList, TextIteratorStreamer
+
+        ids, prompt, options = self._prepare(messages, temperature, max_tokens, max_time)
+        streamer = TextIteratorStreamer(self.tokenizer, skip_prompt=True, skip_special_tokens=True)
+        result: dict[str, Any] = {}
+
+        class Stopped(StoppingCriteria):
+            def __call__(self, input_ids, scores, **kwargs):
+                return torch.full((input_ids.shape[0],), stop.is_set(), dtype=torch.bool, device=input_ids.device)
+
+        def run() -> None:
+            try:
+                with torch.inference_mode():
+                    result["out"] = self.model.generate(**ids, **options, streamer=streamer,
+                                                        stopping_criteria=StoppingCriteriaList([Stopped()]))
+            except BaseException as error:  # the streamer would wait for the end of a generation that crashed
+                result["error"] = error
+                streamer.on_finalized_text("", stream_end=True)
+
+        worker = threading.Thread(target=run, daemon=True)
+        worker.start()
+        try:
+            for text in streamer:
+                if text:  # the streamer also hands out empty pieces (skipped special tokens)
+                    yield "content", text
+            worker.join()
+            if "error" in result:
+                raise result["error"]
+            new = result["out"][0][prompt:]
+            yield "done", {"prompt_tokens": prompt, "completion_tokens": len(new),
+                           "finish": "length" if len(new) >= options["max_new_tokens"] else "stop"}
+        finally:
+            stop.set()
+            worker.join()
+
+    def generate(self, messages: list[dict[str, str]], temperature: float, max_tokens: int, max_time: float) -> dict[str, Any]:
+        import torch
+
+        ids, prompt, options = self._prepare(messages, temperature, max_tokens, max_time)
         with torch.inference_mode():
             out = self.model.generate(**ids, **options)
         new = out[0][prompt:]
@@ -136,6 +181,7 @@ class BitNetEngine:
         self._projects: OrderedDict[str, Loaded] = OrderedDict()
         self._load_lock = threading.Lock()
         self._gate = asyncio.Semaphore(1)
+        self.generation = 0  # part of the answer cache key; changes whenever the loaded models are dropped
 
     @property
     def num_thread(self) -> int | None:
@@ -201,6 +247,21 @@ class BitNetEngine:
         loaded, name, fallback = self._pick(project)
         return {**loaded.generate(messages, temperature, max_tokens, self._timeout), "model": name, "fallback": fallback}
 
+    async def chat_stream(self, messages: list[dict[str, str]], *, project: str | None, temperature: float,
+                          max_tokens: int) -> AsyncIterator[tuple[str, Any]]:
+        """("content", text) pieces, then ("done", stats with `model` and `fallback`). Holds the generation slot until
+        the last piece; when the caller closes the iterator the generation is stopped."""
+        stop = threading.Event()
+        async with self._gate:
+            loaded, name, fallback = await asyncio.to_thread(self._pick, project)
+            events = loaded.stream(messages, temperature, max_tokens, self._timeout, stop)
+            try:
+                while (event := await asyncio.to_thread(next, events, None)) is not None:
+                    kind, value = event
+                    yield kind, ({**value, "model": name, "fallback": fallback} if kind == "done" else value)
+            finally:
+                stop.set()  # a running `next` then ends by itself; closing the generator here could race with it
+
     # Updates: the Hub revision of the base weights, shared by all replicas through one models volume.
 
     async def cached_sha(self) -> str | None:
@@ -230,6 +291,7 @@ class BitNetEngine:
     def _forget(self) -> None:
         with self._load_lock:
             self._base, self._projects = None, OrderedDict()
+            self.generation += 1  # kept answers are from the old weights
 
     def _read_marker(self) -> str | None:
         try:

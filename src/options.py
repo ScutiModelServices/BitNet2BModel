@@ -8,6 +8,8 @@ SETTINGS = [
             help="0 = only when you press Check now"),
     Setting("max_inflight", "Calls allowed to wait for the model", "int", 0, "BITNET_MAX_INFLIGHT", 0, 10000,
             help="Per replica; more get 429. 0 = 4"),
+    Setting("cache_size", "Answers kept per replica", "int", 256, "BITNET_CACHE_SIZE", 0, 100000,
+            help="The last answers for the same request, sent again without generating. Only temperature 0 requests are kept. 0 = off"),
     Setting("max_project_models", "Project models loaded per replica", "int", 2, "BITNET_MAX_PROJECT_MODELS", 1, 64,
             help="Each takes about as much memory as the base model"),
     Setting("project_models_dir", "Project models folder", "text", "", "BITNET_PROJECT_MODELS_DIR",
