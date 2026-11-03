@@ -14,5 +14,7 @@ SETTINGS = [
             help="A folder inside the container. Empty = project models off"),
     Setting("model", "Base model", "text", DEFAULT_MODEL, "BITNET_MODEL", restart=True, blank=False,
             help="A Hugging Face repository. After a restart, download it from the Updates card"),
+    Setting("dtype", "Number format", "text", "bfloat16", "BITNET_DTYPE", restart=True, blank=False,
+            help="bfloat16 or float32. float32 is faster on CPUs without native bfloat16 maths but uses about 1.6x the memory"),
     Setting("warm", "Load the model at start", "bool", True, "BITNET_WARM", restart=True),
 ]
