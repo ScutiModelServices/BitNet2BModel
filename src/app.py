@@ -115,15 +115,19 @@ def create_app(client: BitNetEngine | None = None, admin_password: str | None = 
             client.sync()
             await asyncio.sleep(1)
 
+    async def warm_up() -> None:
+        try:
+            await client.warm()
+        except Exception:
+            _log.exception("Model warm-up failed; the first request will try again")
+
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         background: list[asyncio.Task] = []
         try:
             if config.get("warm") if config else warm:
-                try:
-                    await client.warm()
-                except Exception:
-                    _log.exception("Model warm-up failed; continuing startup")
+                # In the background: the first start downloads the weights, and /health must answer meanwhile.
+                background.append(asyncio.create_task(warm_up()))
             if config or check_hours > 0:
                 background.append(asyncio.create_task(check_forever()))
             if config:

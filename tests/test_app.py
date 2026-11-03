@@ -192,7 +192,24 @@ def test_what_another_replica_saved_reaches_this_one(tmp_path):
 def test_startup_warms_the_model():
     engine = make_engine()
     with TestClient(create_app(engine, warm=True)) as c:
+        for _ in range(100):
+            if c.get("/health").json()["ready"]:
+                break
+            time.sleep(0.02)
         assert engine.loads == ["m"] and c.get("/health").json()["ready"] is True
+
+
+def test_health_answers_while_the_model_is_still_loading():
+    import threading
+    release = threading.Event()
+
+    def slow(source):
+        release.wait(5)
+        return make_engine()._loader(source)
+
+    with TestClient(create_app(make_engine(loader=slow), warm=True)) as c:
+        assert c.get("/health").json()["ready"] is False
+        release.set()
 
 
 def test_warmup_failure_is_logged_without_stopping_service(caplog):
@@ -201,6 +218,10 @@ def test_warmup_failure_is_logged_without_stopping_service(caplog):
 
     with TestClient(create_app(make_engine(loader=failing), warm=True)) as c:
         assert c.get("/health").status_code == 200
+        for _ in range(100):
+            if "warm-up failed" in caplog.text:
+                break
+            time.sleep(0.02)
     assert "warm-up failed" in caplog.text
 
 
