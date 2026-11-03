@@ -37,7 +37,7 @@ curl http://127.0.0.1:9140/health
 ```
 
 Expect `"ready": true` once a replica has loaded the model. The first start downloads the weights into the `models`
-volume, so `bitnet_lb` can take a few minutes to appear (the health check allows 120 s before failures count; run
+volume, so `bitnet_lb` can take a few minutes to appear (the health check allows 300 s before failures count; run
 `docker compose ps` and wait).
 
 ## Scaling
