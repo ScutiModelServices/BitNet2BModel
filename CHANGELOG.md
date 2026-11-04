@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Compose: `stop_grace_period: 90s`, so a restart lets a running answer finish instead of cutting it off after Docker's default 10 s.
 - Docs: set CPU threads to the number of physical cores, not logical CPUs.
 - `/metrics` also returns `bitnet_request_seconds`, a histogram of how long `/v1` calls took on that replica.
 - Compose: optional `BITNET_MEM_LIMIT` caps the container's RAM (default no cap).
