@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Docs: set CPU threads to the number of physical cores, not logical CPUs.
+- `/metrics` also returns `bitnet_request_seconds`, a histogram of how long `/v1` calls took on that replica.
+- Compose: optional `BITNET_MEM_LIMIT` caps the container's RAM (default no cap).
+
 - Answer cache (`BITNET_CACHE_SIZE`, default 256, 0 = off; `X-Cache` header): the last answers to identical `temperature` 0 requests are sent again without generating.
 - `POST /v1/chat` accepts `"stream": true`: the answer arrives as JSON lines (`content` pieces, then `done`).
 

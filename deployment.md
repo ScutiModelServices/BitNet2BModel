@@ -18,9 +18,10 @@ In `.env` next to `docker-compose.yml`:
 | Variable | Default | Effect |
 |---|---|---|
 | `BITNET_REPLICAS` | `1` | Number of `bitnet` containers. Read by Compose. |
+| `BITNET_MEM_LIMIT` | `0` (no cap) | RAM cap per container, for example `7g` (bfloat16 weights use about 5.3 GiB). An out-of-memory kill then stays in the container instead of starving the host. Read by Compose. |
 | `BITNET_PORT` | `9140` | Host port `bitnet_lb` publishes. |
 | `BITNET_ADMIN_PASSWORD` | empty | Password for `/admin/`. When set, every call except `/health` must send a project token as `X-Internal-Token`. Empty = no auth. |
-| `BITNET_NUM_THREAD` | torch decides | Starting value for the CPU threads card; a value saved on `/admin/` wins. |
+| `BITNET_NUM_THREAD` | torch decides | Starting value for the CPU threads card; a value saved on `/admin/` wins. Use the number of physical cores (`lscpu`: cores x sockets), not logical CPUs; more threads than cores slows every call. |
 
 On the **Settings** card of `/admin/` (saved in `settings.json` beside the tokens, shared by all replicas; a saved
 value beats the environment variable named in brackets): update check hours (`BITNET_UPDATE_CHECK_HOURS`, 6),

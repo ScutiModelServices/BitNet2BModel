@@ -117,6 +117,7 @@ def test_rate_limit_edit_stats_and_metrics(tmp_path):
     assert store.list()[0]["timed"] >= 1
     assert c.get("/metrics").status_code == 401
     assert 'bitnet_requests_total{token="p"}' in c.get("/metrics", headers=admin).text
+    assert 'bitnet_request_seconds_bucket{le="+Inf"}' in c.get("/metrics", headers=admin).text
 
 
 def test_requests_over_the_in_flight_limit_get_429():
