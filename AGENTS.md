@@ -7,7 +7,7 @@ This file is the one instruction file for every coding agent; `CLAUDE.md` only i
 
 ## Rules
 - Follow the `model-service-parity` skill and `AI/ModelServices/SHARED-FEATURES.md` (what must match in every model service) and `AI/ModelServices/SERVICE-SPECIFIC.md` (what differs on purpose). A change to a shared feature goes to every service; a new difference goes into `SERVICE-SPECIFIC.md` in the same change.
-- `web/index.html`, `src/tokens.py` and `src/settings.py`, `src/updates.py` are copies shared with the other model services. Change one, copy it to the others, run `python tools/check_sync.py` in each repo.
+- `web/index.html`, `src/tokens.py`, `src/settings.py`, `src/updates.py` and `.dockerignore` are copies shared with the other model services. Change one, copy it to the others, run `python tools/check_sync.py` in each repo.
 - `POST /v1/chat` refuses `tools`, `schema` and `thinking` with 422. This is the source of the engine shape that LFM3Model and SparkX26Model copy: a change to one of the three usually belongs in all three.
 - Settings `model`, `dtype`, `max_project_models` and `project_models_dir`; `src/cache.py` is a copy shared with Laya, MiniCPM, LFM3 and SparkX26.
 - Behaviour changes update `README.md`, `deployment.md`, `docs/guide-web-ui.md`, `.env.example` and `CHANGELOG.md` in the same commit.
