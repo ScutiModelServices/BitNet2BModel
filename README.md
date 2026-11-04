@@ -45,7 +45,7 @@ that answered. Replacing the files of an already loaded project needs a replica 
 numbers, CPU threads, the Settings card (update check hours, in-flight cap, answers kept, project models), and the Updates card
 (**Check now** and **Download new weights** for the Hugging Face repository). New weights are downloaded once into
 the shared models volume; the other replicas notice within a few seconds and load them on their next request.
-`/metrics` (admin password) is Prometheus text per token.
+`/metrics` (admin password) is Prometheus text per token. `bitnet_request_seconds` is a histogram of how long each `/v1` call took on the replica that answers (to the first byte for a streamed reply); it starts from 0 when the replica restarts.
 
 ## Run
 

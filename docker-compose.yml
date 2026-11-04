@@ -9,6 +9,7 @@ services:
   bitnet:
     build: .
     restart: unless-stopped
+    mem_limit: ${BITNET_MEM_LIMIT:-0}  # 0 = no cap; a cap makes an out-of-memory kill stay inside this container
     environment:
       BITNET_ADMIN_PASSWORD: ${BITNET_ADMIN_PASSWORD:-}
       BITNET_NUM_THREAD: ${BITNET_NUM_THREAD:-}
