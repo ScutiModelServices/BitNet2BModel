@@ -3,11 +3,15 @@
 Run Microsoft BitNet b1.58 2B4T on the CPU in Docker Desktop on the machine you work on, so other programs on it can call it.
 
 ## Requirements
+
 - Docker Desktop with Compose v2 (Windows: WSL2 backend).
-- RAM for the model **per replica**. Keep `BITNET_REPLICAS=1` on a PC. Docker Desktop on Windows caps its engine at about half of your RAM unless you raise it in `.wslconfig`.
-- Internet on the first start (about 1.2 GB of weights).
+- About 5 GB of RAM **per replica** (each replica holds the unpacked model), plus the same again for every loaded
+  project model. Keep `BITNET_REPLICAS=1` on a PC. Docker Desktop on Windows caps its engine at about half of your RAM unless you raise it in `.wslconfig`.
+- Network access on the first start to download the weights (about 1.2 GB) from Hugging Face.
+- CPU only. The Dockerfile installs the CPU build of torch and fails the build if a CUDA or ROCm build is found.
 
 ## Steps
+
 1. Configure. In `BitNet2BModel/`:
    ```bash
    cp .env.example .env
@@ -34,7 +38,27 @@ Run Microsoft BitNet b1.58 2B4T on the CPU in Docker Desktop on the machine you 
    - Caller on the host: `http://127.0.0.1:9140`.
    - Caller in another Docker stack on the same host: `http://host.docker.internal:9140`.
 
+## Settings
+
+In `.env` next to `docker-compose.yml`:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `BITNET_REPLICAS` | `1` | Number of `bitnet` containers. Read by Compose. |
+| `BITNET_MEM_LIMIT` | `0` (no cap) | RAM cap per container, for example `7g` (bfloat16 weights use about 5.3 GiB). An out-of-memory kill then stays in the container instead of starving the host. Read by Compose. |
+| `BITNET_PORT` | `9140` | Host port `bitnet_lb` publishes. |
+| `BITNET_ADMIN_PASSWORD` | empty | Password for `/admin/`. When set, every call except `/health` must send a project token as `X-Internal-Token`. Empty = no auth. |
+| `BITNET_NUM_THREAD` | torch decides | Starting value for the CPU threads card; a value saved on `/admin/` wins. Use the number of physical cores (`lscpu`: cores x sockets), not logical CPUs; more threads than cores slows every call. |
+
+On the **Settings** card of `/admin/` (saved in `settings.json` beside the tokens, shared by all replicas; a saved
+value beats the environment variable named in brackets): update check hours (`BITNET_UPDATE_CHECK_HOURS`, 6),
+in-flight cap (`BITNET_MAX_INFLIGHT`, 0 = 4), answers kept per replica (`BITNET_CACHE_SIZE`, 256, 0 = off), project models loaded per replica (`BITNET_MAX_PROJECT_MODELS`, 2),
+project models folder (`BITNET_PROJECT_MODELS_DIR`, empty = off; in Docker use `/models/projects`), base model
+(`BITNET_MODEL`, restart), number format (`BITNET_DTYPE`, restart: `bfloat16` or `float32`; try `float32` if answers take many seconds on a CPU without native bfloat16 maths, it needs about 1.6x the RAM) and load at start (`BITNET_WARM`, restart). Compose does not pass these; add the variable
+under `environment:` of `bitnet` to use one as a starting value.
+
 ## Daily use
+
 ```bash
 docker compose ps          # state
 docker compose logs -f bitnet
@@ -43,10 +67,16 @@ docker compose up -d --build && docker compose restart bitnet_lb   # after a cod
 ```
 
 ## Problems
+
 | Symptom | Fix |
 |---|---|
 | `address already in use` on 9140 | Another copy (`run.bat`, or the same stack on another compose project) is running. Stop it or change `BITNET_PORT`. |
 | `/health` shows `ready: false` for minutes | First start: the weights are downloading or loading. Check `docker compose logs -f bitnet`. |
 | 401 Invalid token | The caller's token is missing or revoked; make one on `/admin/`. |
-
 | Container restarts in a loop | Out of RAM. Raise the Docker Desktop memory limit or lower the replica count. |
+| `bitnet_lb` never starts | No replica is healthy yet (first download, or out of memory). `docker compose logs bitnet`. |
+| Replicas restart in a loop | Out of RAM. Lower `BITNET_REPLICAS`. |
+| 422 on `tools`, `schema` or `thinking` | Not supported by this service. |
+| 429 | Over the token's rate limit, or too many calls waiting for the model. |
+| Slow answers | `transformers` has no BitNet kernels; this is the expected CPU speed. Raise CPU threads on `/admin/`. |
+| nginx 502 after scaling | `bitnet_lb` not restarted after the replica count changed. |
