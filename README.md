@@ -85,3 +85,4 @@ Chat sends messages to `POST /v1/chat`, with optional project, temperature, max_
 - [Docker on another machine](docs/guide-docker-deployment-device.md)
 - [Docker on this PC](docs/guide-docker-same-device.md)
 - [Run without Docker](docs/guide-no-docker-same-device.md)
+- [Test it from the command line](docs/guide-cli.md)
