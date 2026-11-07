@@ -1,4 +1,4 @@
-# BitNet2BModel: without Docker, on Windows
+# CNV_BitNet2B_Model: without Docker, on Windows
 
 Run Microsoft BitNet b1.58 2B4T on the CPU directly with Python: one process, no load balancer, listening on `127.0.0.1:9140`.
 
@@ -8,12 +8,12 @@ Run Microsoft BitNet b1.58 2B4T on the CPU directly with Python: one process, no
 - RAM for the model (one copy).
 
 ## Start
-Double-click `run.bat`, or run it in a terminal from `BitNet2BModel\`. Choose **1 Run the service** in the menu, or run `run.bat run` to skip the menu. It runs `uv sync` to create or update `.venv`, then starts
+Double-click `run.bat`, or run it in a terminal from `CNV_BitNet2B_Model\`. Choose **1 Run the service** in the menu, or run `run.bat run` to skip the menu. It runs `uv sync` to create or update `.venv`, then starts
 `python src/app.py`. The first start downloads about 1.2 GB of weights.
 
 Linux or macOS:
 ```bash
-cd BitNet2BModel
+cd CNV_BitNet2B_Model
 uv sync
 uv run python src/app.py
 ```

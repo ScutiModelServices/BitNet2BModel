@@ -1,4 +1,4 @@
-# BitNet2BModel
+# CNV_BitNet2B_Model
 
 BitNet b1.58 2B4T served over HTTP, behind the shared model-service admin page, tokens and settings. Port 9140, env prefix `BITNET_`, token prefix `bitnet_`.
 
@@ -13,7 +13,7 @@ This file is the one instruction file for every coding agent; `CLAUDE.md` only i
 ## Rules
 - Follow the `model-service-parity` skill and `AI/ModelServices/_docs/SHARED-FEATURES.md` (what must match in every model service) and `AI/ModelServices/_docs/SERVICE-SPECIFIC.md` (what differs on purpose). A change to a shared feature goes to every service; a new difference goes into `SERVICE-SPECIFIC.md` in the same change.
 - `web/index.html`, `src/tokens.py`, `src/settings.py`, `src/updates.py` and `.dockerignore` are copies shared with the other model services. Change one, copy it to the others, run `python tools/check_sync.py` in each repo.
-- `POST /v1/chat` refuses `tools`, `schema` and `thinking` with 422. This is the source of the engine shape that LFM3Model and SparkX26Model copy: a change to one of the three usually belongs in all three.
+- `POST /v1/chat` refuses `tools`, `schema` and `thinking` with 422. This is the source of the engine shape that CNV_LFM3_Model and CNV_SparkX26_Model copy: a change to one of the three usually belongs in all three.
 - Settings `model`, `dtype`, `max_project_models` and `project_models_dir`; `src/cache.py` is a copy shared with Laya, MiniCPM, LFM3 and SparkX26.
 - Behaviour changes update `README.md`, `deployment.md`, `docs/guide-web-ui.md`, `.env.example` and `CHANGELOG.md` in the same commit.
 - Never read or print `.env`, `tokens.json` or `settings.json`.

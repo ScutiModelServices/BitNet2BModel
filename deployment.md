@@ -1,7 +1,7 @@
-# Deploying BitNet2BModel
+# Deploying CNV_BitNet2B_Model
 
-BitNet2BModel is one HTTP service (port 9140). It runs as `bitnet` replicas behind an nginx load balancer,
-`bitnet_lb`. Callers use `http://<host>:9140`; they never reach a replica directly.
+CNV_BitNet2B_Model is one HTTP service (port 9140). It runs as `cnv_bitnet2b_model` replicas behind an nginx load balancer,
+`cnv_bitnet2b_model_lb`. Callers use `http://<host>:9140`; they never reach a replica directly.
 
 ## Ways to run it
 

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Renamed `BitNet2BModel` to `CNV_BitNet2B_Model`; Docker project, API image, services, load balancer and volumes now use `cnv_bitnet2b_model` names. Callers on `citadel_core` connect to `cnv_bitnet2b_model_lb` at the existing port.
+- Docker volume migration: existing volumes with old names are orphaned; renaming does not move data. Stop the old stack before copying; never use `down -v`. The commands below assume the previous default Compose project name; substitute actual volume names if `-p` or `COMPOSE_PROJECT_NAME` overrode it.
+  - `bitnet_models` → `cnv_bitnet2b_model_models`: `docker volume inspect bitnet_models && docker volume create cnv_bitnet2b_model_models && docker run --rm -v bitnet_models:/from:ro -v cnv_bitnet2b_model_models:/to alpine:3.21 sh -c "cd /from && cp -a . /to/"`
+  - `bitnet_tokens` → `cnv_bitnet2b_model_data`: `docker volume inspect bitnet_tokens && docker volume create cnv_bitnet2b_model_data && docker run --rm -v bitnet_tokens:/from:ro -v cnv_bitnet2b_model_data:/to alpine:3.21 sh -c "cd /from && cp -a . /to/"`
+- To retain an old volume instead, set its top-level volume definition to `external: true` and `name: <old-volume-name>` in a local Compose override. Rollback: stop the renamed stack, restore the previous checkout and folder name, and restart the old stack with its original volumes; copy back newer data first if the renamed stack accepted writes.
+
 - `run.bat` loads `.env` from the service folder for a local run: it passes `--dotenv`, the service prints which variable names it loaded (never the values), and a real environment variable still wins. A plain `python src/app.py` and Docker never read `.env`.
 - Untracked folders now start with `.` or `_`: `zip_versions/` is `_zip_versions/`. A local `voices`, `tem_code` or `zip_versions` folder from an older checkout needs renaming by hand.
 - `run.bat` is now a menu (run the service, deploy, build the release ZIP) and `run.bat run|deploy|zip` skips it. `tools/deploy.bat`, `tools/make_zip.bat` and `tools/deploy.local.example.bat` are gone; the local deploy target is `tools/deploy.local.ini` (copy `tools/deploy.local.example.ini`).
@@ -20,7 +26,7 @@
 
 - First version: Microsoft BitNet b1.58 2B4T served on the CPU with `transformers`, with the admin page, project
   tokens (scope, rate limit, expiry), metrics, Settings card, update checks and weight downloads shared with
-  `MiniCPM52BModel` and `LayaModel`.
+  `CNV_MiniCPM52B_Model` and `DSC_Laya_Model`.
 - `POST /v1/chat` takes `messages`, `project`, `temperature` and `max_tokens`. Tools, schemas and thinking are refused
   with 422.
 - Project models are checkpoint folders loaded in process (LRU).

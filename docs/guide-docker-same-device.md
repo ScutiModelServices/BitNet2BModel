@@ -1,4 +1,4 @@
-# BitNet2BModel: Docker Desktop on this PC
+# CNV_BitNet2B_Model: Docker Desktop on this PC
 
 Run Microsoft BitNet b1.58 2B4T on the CPU in Docker Desktop on the machine you work on, so other programs on it can call it.
 
@@ -12,7 +12,7 @@ Run Microsoft BitNet b1.58 2B4T on the CPU in Docker Desktop on the machine you 
 
 ## Steps
 
-1. Configure. In `BitNet2BModel/`:
+1. Configure. In `CNV_BitNet2B_Model/`:
    ```bash
    cp .env.example .env
    ```
@@ -21,8 +21,8 @@ Run Microsoft BitNet b1.58 2B4T on the CPU in Docker Desktop on the machine you 
    ```bash
    docker compose up -d --build
    ```
-   The first start downloads about 1.2 GB of weights into the `models` volume. `bitnet_lb` starts only after the service is healthy
-   (up to 300 s grace). Watch with `docker compose ps` and `docker compose logs -f bitnet`.
+   The first start downloads about 1.2 GB of weights into the `cnv_bitnet2b_model_models` volume. `cnv_bitnet2b_model_lb` starts only after the service is healthy
+   (up to 300 s grace). Watch with `docker compose ps` and `docker compose logs -f cnv_bitnet2b_model`.
 3. Check:
    ```bash
    curl http://127.0.0.1:9140/health
@@ -44,9 +44,9 @@ In `.env` next to `docker-compose.yml`:
 
 | Variable | Default | Effect |
 |---|---|---|
-| `BITNET_REPLICAS` | `1` | Number of `bitnet` containers. Read by Compose. |
+| `BITNET_REPLICAS` | `1` | Number of `cnv_bitnet2b_model` containers. Read by Compose. |
 | `BITNET_MEM_LIMIT` | `0` (no cap) | RAM cap per container, for example `7g` (bfloat16 weights use about 5.3 GiB). An out-of-memory kill then stays in the container instead of starving the host. Read by Compose. |
-| `BITNET_PORT` | `9140` | Host port `bitnet_lb` publishes. |
+| `BITNET_PORT` | `9140` | Host port `cnv_bitnet2b_model_lb` publishes. |
 | `BITNET_ADMIN_PASSWORD` | empty | Password for `/admin/`. When set, every call except `/health` must send a project token as `X-Internal-Token`. Empty = no auth. |
 | `BITNET_NUM_THREAD` | torch decides | Starting value for the CPU threads card; a value saved on `/admin/` wins. Use the number of physical cores (`lscpu`: cores x sockets), not logical CPUs; more threads than cores slows every call. |
 
@@ -55,15 +55,15 @@ value beats the environment variable named in brackets): update check hours (`BI
 in-flight cap (`BITNET_MAX_INFLIGHT`, 0 = 4), answers kept per replica (`BITNET_CACHE_SIZE`, 256, 0 = off), project models loaded per replica (`BITNET_MAX_PROJECT_MODELS`, 2),
 project models folder (`BITNET_PROJECT_MODELS_DIR`, empty = off; in Docker use `/models/projects`), base model
 (`BITNET_MODEL`, restart), number format (`BITNET_DTYPE`, restart: `bfloat16` or `float32`; try `float32` if answers take many seconds on a CPU without native bfloat16 maths, it needs about 1.6x the RAM) and load at start (`BITNET_WARM`, restart). Compose does not pass these; add the variable
-under `environment:` of `bitnet` to use one as a starting value.
+under `environment:` of `cnv_bitnet2b_model` to use one as a starting value.
 
 ## Daily use
 
 ```bash
 docker compose ps          # state
-docker compose logs -f bitnet
+docker compose logs -f cnv_bitnet2b_model
 docker compose down        # stop (the weights volume is kept)
-docker compose up -d --build && docker compose restart bitnet_lb   # after a code change
+docker compose up -d --build && docker compose restart cnv_bitnet2b_model_lb   # after a code change
 ```
 
 ## Problems
@@ -71,12 +71,14 @@ docker compose up -d --build && docker compose restart bitnet_lb   # after a cod
 | Symptom | Fix |
 |---|---|
 | `address already in use` on 9140 | Another copy (`run.bat`, or the same stack on another compose project) is running. Stop it or change `BITNET_PORT`. |
-| `/health` shows `ready: false` for minutes | First start: the weights are downloading or loading. Check `docker compose logs -f bitnet`. |
+| `/health` shows `ready: false` for minutes | First start: the weights are downloading or loading. Check `docker compose logs -f cnv_bitnet2b_model`. |
 | 401 Invalid token | The caller's token is missing or revoked; make one on `/admin/`. |
 | Container restarts in a loop | Out of RAM. Raise the Docker Desktop memory limit or lower the replica count. |
-| `bitnet_lb` never starts | No replica is healthy yet (first download, or out of memory). `docker compose logs bitnet`. |
+| `cnv_bitnet2b_model_lb` never starts | No replica is healthy yet (first download, or out of memory). `docker compose logs cnv_bitnet2b_model`. |
 | Replicas restart in a loop | Out of RAM. Lower `BITNET_REPLICAS`. |
 | 422 on `tools`, `schema` or `thinking` | Not supported by this service. |
 | 429 | Over the token's rate limit, or too many calls waiting for the model. |
 | Slow answers | `transformers` has no BitNet kernels; this is the expected CPU speed. Raise CPU threads on `/admin/`. |
-| nginx 502 after scaling | `bitnet_lb` not restarted after the replica count changed. |
+| nginx 502 after scaling | `cnv_bitnet2b_model_lb` not restarted after the replica count changed. |
+
+The load balancer also joins external `citadel_core` as `cnv_bitnet2b_model_lb`. Start the Citadel stack first so that network exists; tool services on it use `http://cnv_bitnet2b_model_lb:9140`. Docker project and API image are `cnv_bitnet2b_model` and `cnv_bitnet2b_model:latest`; persistent volumes have explicit `cnv_bitnet2b_model_*` names. Volume migration and rollback instructions are in [CHANGELOG.md](../CHANGELOG.md).

@@ -1,8 +1,8 @@
-# BitNet2BModel
+# CNV_BitNet2B_Model
 
 The one place Microsoft's BitNet b1.58 2B4T is served. Projects send it chat turns over HTTP instead of loading the
 model themselves. It has the same admin page, tokens, rate limits, metrics, settings and update checks as
-`MiniCPM52BModel` and `LayaModel`.
+`CNV_MiniCPM52B_Model` and `DSC_Laya_Model`.
 
 BitNet is run in this process on the CPU with `transformers`. Ollama and stock llama.cpp cannot load Microsoft's GGUF
 (`unsupported tensor "blk.0.ffn_down.weight" size overflows`), and bitnet.cpp's kernels are not used here. Expect the
@@ -31,7 +31,7 @@ cache for plain calls and the other way round.
 at most 4096 and the whole conversation must fit the model's 4096-token window (422 otherwise).
 
 **Not supported.** `tools`, `schema` and `thinking` are refused with 422, not ignored: the model has no tool-calling
-or thinking mode and the service has no constrained decoding. Use `MiniCPM52BModel` for those.
+or thinking mode and the service has no constrained decoding. Use `CNV_MiniCPM52B_Model` for those.
 
 **Project models.** Optional `"project": "my-project"` (`^[a-z0-9][a-z0-9_-]{0,47}$`) uses the checkpoint folder
 `<project models folder>/my-project` when it holds a complete Hugging Face checkpoint of the same architecture
