@@ -50,10 +50,10 @@ the shared models volume; the other replicas notice within a few seconds and loa
 ## Run
 
 ```bash
-docker compose up -d --build        # http://<host>:9140
+docker compose up -d --build        # http://<host>:29201
 ```
 
-Without Docker: `run.bat` (uv, listens on `127.0.0.1:9140`). The first start downloads about 1.2 GB. Each replica holds
+Without Docker: `run.bat` (uv, listens on `127.0.0.1:29201`). The first start downloads about 1.2 GB. Each replica holds
 the unpacked model in RAM (about 5 GB), so `BITNET_REPLICAS` multiplies memory use. See `deployment.md`.
 
 ## Tests

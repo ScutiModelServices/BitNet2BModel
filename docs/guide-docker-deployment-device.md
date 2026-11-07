@@ -34,7 +34,7 @@ cd /media/ZimaOS-HD/Apps/CNV_BitNet2B_Model
 Create `.env` (deploy option 2 copies yours, or `cp .env.example .env` and edit):
 - `BITNET_ADMIN_PASSWORD`: a real password.
 - `BITNET_REPLICAS=1` unless you have the memory for more.
-- `BITNET_PORT=9140` (published on all interfaces; firewall it if the LAN should not reach it, or bind it to
+- `BITNET_PORT=29201` (published on all interfaces; firewall it if the LAN should not reach it, or bind it to
   `127.0.0.1` in the `ports:` line of `cnv_bitnet2b_model_lb` when only callers on the machine need it).
 
 ## 3. Start
@@ -42,21 +42,21 @@ Create `.env` (deploy option 2 copies yours, or `cp .env.example .env` and edit)
 ```bash
 docker compose up -d --build
 docker compose ps
-curl http://127.0.0.1:9140/health
+curl http://127.0.0.1:29201/health
 ```
 The first start downloads about 1.2 GB of weights into the `cnv_bitnet2b_model_models` volume; `cnv_bitnet2b_model_lb` waits for a healthy service
 (up to 300 s grace).
 
 ## 4. Connect callers
 
-1. Open `http://<machine-ip>:9140/admin/`, sign in with the admin password and create one token per caller
+1. Open `http://<machine-ip>:29201/admin/`, sign in with the admin password and create one token per caller
    (see [guide-web-ui.md](guide-web-ui.md)).
 2. The caller holds the URL and token:
-   - Caller on another machine: `http://<machine-ip>:9140`.
-   - Caller in a Docker stack on the same machine: `http://host.docker.internal:9140`.
+   - Caller on another machine: `http://<machine-ip>:29201`.
+   - Caller in a Docker stack on the same machine: `http://host.docker.internal:29201`.
 3. Try a call from the machine:
    ```bash
-   curl -X POST http://127.0.0.1:9140/v1/chat -H "Content-Type: application/json" -H "X-Internal-Token: bitnet_..." -d '{"messages":[{"role":"user","content":"Say hello in one sentence."}]}'
+   curl -X POST http://127.0.0.1:29201/v1/chat -H "Content-Type: application/json" -H "X-Internal-Token: bitnet_..." -d '{"messages":[{"role":"user","content":"Say hello in one sentence."}]}'
    ```
 
 ## Scaling
@@ -87,7 +87,7 @@ A plain publish (`run.bat`, Deploy, option 1) only updates the `live` branch. Fo
 
 | Symptom | Fix |
 |---|---|
-| Caller cannot reach the service | Check the caller's URL and token, and that `curl http://<machine-ip>:9140/health` works. |
+| Caller cannot reach the service | Check the caller's URL and token, and that `curl http://<machine-ip>:29201/health` works. |
 | nginx 502 after an update | `docker compose restart cnv_bitnet2b_model_lb`. |
 | Permission denied on push | run.bat Deploy option 6. |
-| Port 9140 in use | Another stack on the machine already publishes it. |
+| Port 29201 in use | Another stack on the machine already publishes it. |

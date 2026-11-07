@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Default HTTP port moves from 9140 to 29201. Update explicit old ports in your real `.env`, saved tool-service `backends.json` connections, and browser/MCP client configurations once. Compose now uses 29201 inside API replicas and nginx; deployments using the old Compose default must recreate containers. A custom host-port override stays in effect until you change it; container ports still move to 29201.
+
 - Renamed `BitNet2BModel` to `CNV_BitNet2B_Model`; Docker project, API image, services, load balancer and volumes now use `cnv_bitnet2b_model` names. Callers on `citadel_core` connect to `cnv_bitnet2b_model_lb` at the existing port.
 - Docker volume migration: existing volumes with old names are orphaned; renaming does not move data. Stop the old stack before copying; never use `down -v`. The commands below assume the previous default Compose project name; substitute actual volume names if `-p` or `COMPOSE_PROJECT_NAME` overrode it.
   - `bitnet_models` → `cnv_bitnet2b_model_models`: `docker volume inspect bitnet_models && docker volume create cnv_bitnet2b_model_models && docker run --rm -v bitnet_models:/from:ro -v cnv_bitnet2b_model_models:/to alpine:3.21 sh -c "cd /from && cp -a . /to/"`
