@@ -21,7 +21,7 @@ and finally `{"type": "done", ...}` holding the same body a call without `stream
 the first piece (a conversation that is too long, a full queue) is still a normal HTTP error; a failure after it is
 sent as `{"type": "error", "status", ...}` and ends the stream. A kept answer (see below) is streamed back in one piece.
 
-**Cache.** The *Answers kept per replica* setting (`BITNET_CACHE_SIZE`, default 256, 0 = off) keeps the last answers
+**Cache.** The *Answers kept per replica* setting (`SERVICE_CACHE_SIZE`, default 256, 0 = off) keeps the last answers
 for identical requests and sends them again without generating (`X-Cache: hit`). Only requests with `temperature` 0
 (the default) are kept, because a higher temperature asks for a different answer each time. Project model files are not watched (see the note on project models), so a replaced checkpoint is only noticed after a restart; new base weights empty the cache. The cache is per
 replica, so with N replicas the hit rate is about 1/N. `stream` does not change the key: a streamed answer fills the
@@ -41,7 +41,7 @@ that answered. Replacing the files of an already loaded project needs a replica 
 
 ## Admin page
 
-`/admin/` (password `BITNET_ADMIN_PASSWORD`): per-project tokens with project scope, rate limit and expiry, usage
+`/admin/` (password `SERVICE_ADMIN_PASSWORD`): per-project tokens with project scope, rate limit and expiry, usage
 numbers, CPU threads, the Settings card (update check hours, in-flight cap, answers kept, project models), and the Updates card
 (**Check now** and **Download new weights** for the Hugging Face repository). New weights are downloaded once into
 the shared models volume; the other replicas notice within a few seconds and load them on their next request.
@@ -54,7 +54,7 @@ docker compose up -d --build        # http://<host>:29201
 ```
 
 Without Docker: `run.bat` (uv, listens on `127.0.0.1:29201`). The first start downloads about 1.2 GB. Each replica holds
-the unpacked model in RAM (about 5 GB), so `BITNET_REPLICAS` multiplies memory use. See `deployment.md`.
+the unpacked model in RAM (about 5 GB), so `SERVICE_REPLICAS` multiplies memory use. See `deployment.md`.
 
 ## Tests
 

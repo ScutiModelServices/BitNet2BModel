@@ -1,6 +1,6 @@
 # CNV_BitNet2B_Model
 
-BitNet b1.58 2B4T served over HTTP, behind the shared model-service admin page, tokens and settings. Port 29201, env prefix `BITNET_`, token prefix `bitnet_`.
+BitNet b1.58 2B4T served over HTTP, behind the shared model-service admin page, tokens and settings. Port 29201, env prefix `SERVICE_`, token prefix `bitnet_`.
 
 ## Agent instructions
 This file is the one instruction file for every coding agent; `CLAUDE.md` only imports it (`@AGENTS.md`). Edit this file, never `CLAUDE.md`.

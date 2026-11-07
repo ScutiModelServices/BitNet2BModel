@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### Breaking: common service environment variables
+
+Service-owned environment variables now use `SERVICE_*`. Old names are no longer read.
+Rename old names once in your real `.env`, Compose `environment:` block, and CI/secret settings.
+
+| Old name | New name |
+|---|---|
+| `BITNET_ADMIN_PASSWORD` | `SERVICE_ADMIN_PASSWORD` |
+| `BITNET_CACHE_SIZE` | `SERVICE_CACHE_SIZE` |
+| `BITNET_DTYPE` | `SERVICE_DTYPE` |
+| `BITNET_HOST` | `SERVICE_HOST` |
+| `BITNET_MAX_INFLIGHT` | `SERVICE_MAX_INFLIGHT` |
+| `BITNET_MAX_PROJECT_MODELS` | `SERVICE_MAX_PROJECT_MODELS` |
+| `BITNET_MEM_LIMIT` | `SERVICE_MEM_LIMIT` |
+| `BITNET_MODEL` | `SERVICE_MODEL` |
+| `BITNET_NUM_THREAD` | `SERVICE_NUM_THREAD` |
+| `BITNET_PORT` | `SERVICE_PORT` |
+| `BITNET_PROJECT_MODELS_DIR` | `SERVICE_PROJECT_MODELS_DIR` |
+| `BITNET_REPLICAS` | `SERVICE_REPLICAS` |
+| `BITNET_TOKENS_FILE` | `SERVICE_TOKENS_FILE` |
+| `BITNET_UPDATE_CHECK_HOURS` | `SERVICE_UPDATE_CHECK_HOURS` |
+| `BITNET_WARM` | `SERVICE_WARM` |
+| `BITNET_WEB_DIR` | `SERVICE_WEB_DIR` |
+| `BITNET_WEIGHTS_MARKER` | `SERVICE_WEIGHTS_MARKER` |
+
 - Default HTTP port moves from 9140 to 29201. Update explicit old ports in your real `.env`, saved tool-service `backends.json` connections, and browser/MCP client configurations once. Compose now uses 29201 inside API replicas and nginx; deployments using the old Compose default must recreate containers. A custom host-port override stays in effect until you change it; container ports still move to 29201.
 
 - Renamed `BitNet2BModel` to `CNV_BitNet2B_Model`; Docker project, API image, services, load balancer and volumes now use `cnv_bitnet2b_model` names. Callers on `citadel_core` connect to `cnv_bitnet2b_model_lb` at the existing port.
@@ -21,9 +46,9 @@
 - Compose: `stop_grace_period: 90s`, so a restart lets a running answer finish instead of cutting it off after Docker's default 10 s.
 - Docs: set CPU threads to the number of physical cores, not logical CPUs.
 - `/metrics` also returns `bitnet_request_seconds`, a histogram of how long `/v1` calls took on that replica.
-- Compose: optional `BITNET_MEM_LIMIT` caps the container's RAM (default no cap).
+- Compose: optional `SERVICE_MEM_LIMIT` caps the container's RAM (default no cap).
 
-- Answer cache (`BITNET_CACHE_SIZE`, default 256, 0 = off; `X-Cache` header): the last answers to identical `temperature` 0 requests are sent again without generating.
+- Answer cache (`SERVICE_CACHE_SIZE`, default 256, 0 = off; `X-Cache` header): the last answers to identical `temperature` 0 requests are sent again without generating.
 - `POST /v1/chat` accepts `"stream": true`: the answer arrives as JSON lines (`content` pieces, then `done`).
 
 - First version: Microsoft BitNet b1.58 2B4T served on the CPU with `transformers`, with the admin page, project

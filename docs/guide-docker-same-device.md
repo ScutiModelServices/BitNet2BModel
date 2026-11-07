@@ -6,7 +6,7 @@ Run Microsoft BitNet b1.58 2B4T on the CPU in Docker Desktop on the machine you 
 
 - Docker Desktop with Compose v2 (Windows: WSL2 backend).
 - About 5 GB of RAM **per replica** (each replica holds the unpacked model), plus the same again for every loaded
-  project model. Keep `BITNET_REPLICAS=1` on a PC. Docker Desktop on Windows caps its engine at about half of your RAM unless you raise it in `.wslconfig`.
+  project model. Keep `SERVICE_REPLICAS=1` on a PC. Docker Desktop on Windows caps its engine at about half of your RAM unless you raise it in `.wslconfig`.
 - Network access on the first start to download the weights (about 1.2 GB) from Hugging Face.
 - CPU only. The Dockerfile installs the CPU build of torch and fails the build if a CUDA or ROCm build is found.
 
@@ -16,7 +16,7 @@ Run Microsoft BitNet b1.58 2B4T on the CPU in Docker Desktop on the machine you 
    ```bash
    cp .env.example .env
    ```
-   Set `BITNET_ADMIN_PASSWORD` (empty = no auth and no admin page, fine for a local test). Leave `BITNET_PORT=29201`. Leave `BITNET_REPLICAS=1`.
+   Set `SERVICE_ADMIN_PASSWORD` (empty = no auth and no admin page, fine for a local test). Leave `SERVICE_PORT=29201`. Leave `SERVICE_REPLICAS=1`.
 2. Start:
    ```bash
    docker compose up -d --build
@@ -44,17 +44,17 @@ In `.env` next to `docker-compose.yml`:
 
 | Variable | Default | Effect |
 |---|---|---|
-| `BITNET_REPLICAS` | `1` | Number of `cnv_bitnet2b_model` containers. Read by Compose. |
-| `BITNET_MEM_LIMIT` | `0` (no cap) | RAM cap per container, for example `7g` (bfloat16 weights use about 5.3 GiB). An out-of-memory kill then stays in the container instead of starving the host. Read by Compose. |
-| `BITNET_PORT` | `29201` | Host port `cnv_bitnet2b_model_lb` publishes. |
-| `BITNET_ADMIN_PASSWORD` | empty | Password for `/admin/`. When set, every call except `/health` must send a project token as `X-Internal-Token`. Empty = no auth. |
-| `BITNET_NUM_THREAD` | torch decides | Starting value for the CPU threads card; a value saved on `/admin/` wins. Use the number of physical cores (`lscpu`: cores x sockets), not logical CPUs; more threads than cores slows every call. |
+| `SERVICE_REPLICAS` | `1` | Number of `cnv_bitnet2b_model` containers. Read by Compose. |
+| `SERVICE_MEM_LIMIT` | `0` (no cap) | RAM cap per container, for example `7g` (bfloat16 weights use about 5.3 GiB). An out-of-memory kill then stays in the container instead of starving the host. Read by Compose. |
+| `SERVICE_PORT` | `29201` | Host port `cnv_bitnet2b_model_lb` publishes. |
+| `SERVICE_ADMIN_PASSWORD` | empty | Password for `/admin/`. When set, every call except `/health` must send a project token as `X-Internal-Token`. Empty = no auth. |
+| `SERVICE_NUM_THREAD` | torch decides | Starting value for the CPU threads card; a value saved on `/admin/` wins. Use the number of physical cores (`lscpu`: cores x sockets), not logical CPUs; more threads than cores slows every call. |
 
 On the **Settings** card of `/admin/` (saved in `settings.json` beside the tokens, shared by all replicas; a saved
-value beats the environment variable named in brackets): update check hours (`BITNET_UPDATE_CHECK_HOURS`, 6),
-in-flight cap (`BITNET_MAX_INFLIGHT`, 0 = 4), answers kept per replica (`BITNET_CACHE_SIZE`, 256, 0 = off), project models loaded per replica (`BITNET_MAX_PROJECT_MODELS`, 2),
-project models folder (`BITNET_PROJECT_MODELS_DIR`, empty = off; in Docker use `/models/projects`), base model
-(`BITNET_MODEL`, restart), number format (`BITNET_DTYPE`, restart: `bfloat16` or `float32`; try `float32` if answers take many seconds on a CPU without native bfloat16 maths, it needs about 1.6x the RAM) and load at start (`BITNET_WARM`, restart). Compose does not pass these; add the variable
+value beats the environment variable named in brackets): update check hours (`SERVICE_UPDATE_CHECK_HOURS`, 6),
+in-flight cap (`SERVICE_MAX_INFLIGHT`, 0 = 4), answers kept per replica (`SERVICE_CACHE_SIZE`, 256, 0 = off), project models loaded per replica (`SERVICE_MAX_PROJECT_MODELS`, 2),
+project models folder (`SERVICE_PROJECT_MODELS_DIR`, empty = off; in Docker use `/models/projects`), base model
+(`SERVICE_MODEL`, restart), number format (`SERVICE_DTYPE`, restart: `bfloat16` or `float32`; try `float32` if answers take many seconds on a CPU without native bfloat16 maths, it needs about 1.6x the RAM) and load at start (`SERVICE_WARM`, restart). Compose does not pass these; add the variable
 under `environment:` of `cnv_bitnet2b_model` to use one as a starting value.
 
 ## Daily use
@@ -70,12 +70,12 @@ docker compose up -d --build && docker compose restart cnv_bitnet2b_model_lb   #
 
 | Symptom | Fix |
 |---|---|
-| `address already in use` on 29201 | Another copy (`run.bat`, or the same stack on another compose project) is running. Stop it or change `BITNET_PORT`. |
+| `address already in use` on 29201 | Another copy (`run.bat`, or the same stack on another compose project) is running. Stop it or change `SERVICE_PORT`. |
 | `/health` shows `ready: false` for minutes | First start: the weights are downloading or loading. Check `docker compose logs -f cnv_bitnet2b_model`. |
 | 401 Invalid token | The caller's token is missing or revoked; make one on `/admin/`. |
 | Container restarts in a loop | Out of RAM. Raise the Docker Desktop memory limit or lower the replica count. |
 | `cnv_bitnet2b_model_lb` never starts | No replica is healthy yet (first download, or out of memory). `docker compose logs cnv_bitnet2b_model`. |
-| Replicas restart in a loop | Out of RAM. Lower `BITNET_REPLICAS`. |
+| Replicas restart in a loop | Out of RAM. Lower `SERVICE_REPLICAS`. |
 | 422 on `tools`, `schema` or `thinking` | Not supported by this service. |
 | 429 | Over the token's rate limit, or too many calls waiting for the model. |
 | Slow answers | `transformers` has no BitNet kernels; this is the expected CPU speed. Raise CPU threads on `/admin/`. |
